@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django_daraja.mpesa.core import MpesaClient
+from django.shortcuts import render, get_object_or_404
 
 from .models import Tenant, Payment
 from .serializers import TenantSerializer, PaymentSerializer
@@ -114,3 +115,13 @@ def mpesa_callback(request):
     print("----------------------------------------------------------------")
     
     return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+from django.shortcuts import render, get_object_or_404
+
+def tenant_dashboard(request, tenant_id):
+    tenant = get_object_or_404(Tenant, id=tenant_id)
+    payments = tenant.payments.all().order_by('-date_created')
+    return render(request, 'management/dashboard.html', {
+        'tenant': tenant,
+        'payments': payments
+    })
