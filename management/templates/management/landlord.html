@@ -10,10 +10,24 @@
         .table { border-radius: 12px; overflow: hidden; }
         .badge-paid { background-color: #198754; }
         .badge-pending { background-color: #ffc107; color: #000; }
+        .auth-header { border-bottom: 1px solid #444; padding: 10px 0; margin-bottom: 30px; }
     </style>
 </head>
 <body class="bg-dark text-white">
-    <div class="container mt-5 pb-5">
+    <div class="container mt-3 pb-5">
+        
+        <div class="auth-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 text-info">Ke-Rental System</h5>
+            <div class="d-flex align-items-center">
+                <span class="me-3 text-white-50 small">Logged in as <strong>{{ user.username }}</strong></span>
+                
+                <form action="/admin/logout/?next=/landlord/" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Logout</button>
+                </form>
+            </div>
+        </div>
+
         <h2 class="mb-4">Property Financial Overview</h2>
         
         <div class="row mb-5">

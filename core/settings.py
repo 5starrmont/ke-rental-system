@@ -132,3 +132,9 @@ MPESA_CONFIG = {
     'EXPRESS_PASSKEY': config('MPESA_EXPRESS_PASSKEY'),
     'ENV': config('MPESA_ENVIRONMENT'),
 }
+
+LOGIN_URL = '/admin/login/'
+
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'tenant-dashboard'
+LOGOUT_REDIRECT_URL = 'login'

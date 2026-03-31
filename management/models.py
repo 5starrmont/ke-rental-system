@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 class Property(models.Model):
     """The 'Plot' or 'Apartment' name (e.g., Sunrise Apartments)."""
@@ -23,6 +24,8 @@ class Unit(models.Model):
 
 class Tenant(models.Model):
     """The person currently occupying a unit."""
+    # This connects the Tenant record to a System Login (User)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='tenant_profile', null=True, blank=True)
     name = models.CharField(max_length=200)
     phone_number = models.CharField(max_length=15)
     unit = models.OneToOneField(Unit, on_delete=models.SET_NULL, null=True, blank=True)

@@ -2,6 +2,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, get_object_or_404
 from django.db.models import Sum
+from django.contrib.auth.decorators import login_required
 
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
@@ -118,20 +119,31 @@ def mpesa_callback(request):
 
 # --- Dashboard Views ---
 
-def tenant_dashboard(request, tenant_id):
+@login_required
+def tenant_dashboard(request):
     """
-    Self-service portal for a specific tenant.
+    Shows the dashboard ONLY for the logged-in tenant.
+    No tenant_id needed in the URL anymore.
     """
-    tenant = get_object_or_404(Tenant, id=tenant_id)
-    payments = tenant.payments.all().order_by('-date_created')
-    return render(request, 'management/dashboard.html', {
-        'tenant': tenant,
-        'payments': payments
-    })
+    try:
+        # Link to the OneToOneField user profile
+        tenant = request.user.tenant_profile
+        payments = tenant.payments.all().order_by('-date_created')
+        return render(request, 'management/dashboard.html', {
+            'tenant': tenant,
+            'payments': payments
+        })
+    except (AttributeError, Tenant.DoesNotExist):
+        # Fallback if an admin logs in without a tenant profile
+        return render(request, 'management/dashboard.html', {
+            'error': "No tenant profile linked to this account."
+        })
 
+@login_required
 def landlord_dashboard(request):
     """
     Global financial overview for the property manager.
+    Only accessible by logged-in users (Staff/Admin).
     """
     search_query = request.GET.get('search', '')
     tenants = Tenant.objects.all()
