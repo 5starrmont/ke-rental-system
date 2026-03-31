@@ -1,14 +1,19 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import render, get_object_or_404
+from django.db.models import Sum
+
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
 from django_daraja.mpesa.core import MpesaClient
-from django.shortcuts import render, get_object_or_404
 
 from .models import Tenant, Payment
 from .serializers import TenantSerializer, PaymentSerializer
+
+# --- API ViewSets ---
 
 class TenantViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -21,33 +26,34 @@ class PaymentViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows payments to be viewed or created.
     """
-    queryset = Payment.objects.all()
+    queryset = Payment.objects.all().order_by('-date_created')
     serializer_class = PaymentSerializer
+
+# --- M-Pesa Integration Logic ---
 
 @api_view(['POST'])
 def initiate_mpesa_payment(request):
     """
-    Triggers STK Push and creates a PENDING payment record with the CheckoutRequestID.
+    Triggers STK Push and creates a PENDING payment record.
     """
     tenant_id = request.data.get('tenant_id')
     amount = request.data.get('amount')
 
     try:
         tenant = Tenant.objects.get(id=tenant_id)
+        # Ensure this URL matches your active ngrok tunnel
         callback_url = 'https://oversevere-micki-excursionary.ngrok-free.dev/api/mpesa-callback/'
         
         cl = MpesaClient()
         account_reference = f'House-{tenant.unit.house_number}'
         transaction_desc = f'Rent for {tenant.name}'
         
-        # 1. Trigger the STK Push
+        # 1. Trigger STK Push
         response = cl.stk_push(tenant.phone_number, int(amount), account_reference, transaction_desc, callback_url)
-        
-        # 2. Extract the CheckoutRequestID from the response
         res_data = response.json()
         checkout_id = res_data.get('CheckoutRequestID')
 
-        # 3. Create a record in our DB so we can track it later
+        # 2. Create local record
         Payment.objects.create(
             tenant=tenant,
             amount=amount,
@@ -71,7 +77,7 @@ def initiate_mpesa_payment(request):
 @permission_classes([AllowAny])
 def mpesa_callback(request):
     """
-    Safaricom hits this endpoint. Updates status and subtracts from Tenant balance.
+    Safaricom callback. Updates status and reconciles tenant balance.
     """
     data = request.data
     stk_callback = data.get('Body', {}).get('stkCallback', {})
@@ -81,47 +87,66 @@ def mpesa_callback(request):
     print(f"----------- CALLBACK RECEIVED FOR ID: {checkout_id} -----------")
     
     try:
-        # Find the specific payment we started earlier
         payment = Payment.objects.get(checkout_id=checkout_id)
         
-        # Prevent double-processing if Safaricom sends the same callback twice
         if payment.status != 'PAID' and result_code == 0:
-            # Success Path
+            # Success: Extract metadata
             items = stk_callback.get('CallbackMetadata', {}).get('Item', [])
             metadata = {item['Name']: item.get('Value') for item in items}
             
-            # 1. Update Payment record
+            # Update Payment
             payment.status = 'PAID'
             payment.mpesa_receipt = metadata.get('MpesaReceiptNumber')
             payment.save()
             
-            # 2. Update Tenant Balance
+            # Reconcile Tenant Balance
             tenant = payment.tenant
             tenant.balance -= payment.amount
             tenant.save()
             
-            print(f"✅ SUCCESS: Payment {payment.id} PAID. Tenant {tenant.name} balance is now {tenant.balance}.")
+            print(f"✅ SUCCESS: Payment {payment.id} PAID. Tenant {tenant.name} balance updated.")
             
         elif result_code != 0:
-            # Failure Path
-            desc = stk_callback.get('ResultDesc')
             payment.status = 'FAILED'
             payment.save()
-            print(f"❌ FAILED: Code {result_code} - {desc}")
+            print(f"❌ FAILED: Code {result_code} - {stk_callback.get('ResultDesc')}")
             
     except Payment.DoesNotExist:
-        print(f"⚠️ WARNING: Received callback for {checkout_id} but no record exists in our DB.")
-    
-    print("----------------------------------------------------------------")
+        print(f"⚠️ WARNING: Callback for {checkout_id} received but no record found.")
     
     return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
-from django.shortcuts import render, get_object_or_404
+# --- Dashboard Views ---
 
 def tenant_dashboard(request, tenant_id):
+    """
+    Self-service portal for a specific tenant.
+    """
     tenant = get_object_or_404(Tenant, id=tenant_id)
     payments = tenant.payments.all().order_by('-date_created')
     return render(request, 'management/dashboard.html', {
         'tenant': tenant,
         'payments': payments
+    })
+
+def landlord_dashboard(request):
+    """
+    Global financial overview for the property manager.
+    """
+    search_query = request.GET.get('search', '')
+    tenants = Tenant.objects.all()
+    
+    if search_query:
+        tenants = tenants.filter(name__icontains=search_query)
+
+    total_expected = Tenant.objects.aggregate(Sum('balance'))['balance__sum'] or 0
+    total_collected = Payment.objects.filter(status='PAID').aggregate(Sum('amount'))['amount__sum'] or 0
+    recent_payments = Payment.objects.all().order_by('-date_created')[:10]
+    
+    return render(request, 'management/landlord.html', {
+        'total_expected': total_expected,
+        'total_collected': total_collected,
+        'tenants': tenants,
+        'recent_payments': recent_payments,
+        'search_query': search_query
     })

@@ -17,4 +17,6 @@ urlpatterns = [
 
     # HTML Dashboard View
     path('dashboard/<int:tenant_id>/', views.tenant_dashboard, name='tenant-dashboard'),
+
+    path('landlord/', views.landlord_dashboard, name='landlord-dashboard'),
 ]
