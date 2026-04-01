@@ -56,7 +56,15 @@
                                     </span>
                                 </td>
                                 <td>KES {{ payment.amount }}</td>
-                                <td><code>{{ payment.mpesa_receipt|default:"--" }}</code></td>
+                                <td>
+                                    {% if payment.transaction_type == 'MPESA' and payment.status == 'PAID' %}
+                                        <a href="{% url 'download_receipt' payment.id %}" class="btn btn-sm btn-outline-primary">
+                                            {{ payment.mpesa_receipt|default:"Download" }}
+                                        </a>
+                                    {% else %}
+                                        <code class="text-muted">--</code>
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if payment.transaction_type == 'CHARGE' %}
                                         <span class="badge bg-secondary">BILLED</span>

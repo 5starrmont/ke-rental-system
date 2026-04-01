@@ -15,10 +15,11 @@ urlpatterns = [
     path('initiate-payment/', views.initiate_mpesa_payment, name='initiate-payment'),
     path('mpesa-callback/', views.mpesa_callback, name='mpesa-callback'),
 
-    # HTML Dashboard View
-    path('dashboard/<int:tenant_id>/', views.tenant_dashboard, name='tenant-dashboard'),
-
+    # HTML Dashboard Views
+    path('dashboard/', views.tenant_dashboard, name='tenant-dashboard'),
+    path('dashboard/<int:tenant_id>/', views.tenant_dashboard, name='tenant-dashboard-detail'),
     path('landlord/', views.landlord_dashboard, name='landlord-dashboard'),
 
-    path('dashboard/', views.tenant_dashboard, name='tenant-dashboard'),
+    # NEW: PDF Receipt Download Path
+    path('download-receipt/<int:payment_id>/', views.download_receipt, name='download_receipt'),
 ]

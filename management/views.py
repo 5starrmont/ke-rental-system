@@ -1,6 +1,6 @@
 import africastalking
 import time
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, get_object_or_404
 from django.db.models import Sum
@@ -16,6 +16,7 @@ from django_daraja.mpesa.core import MpesaClient
 
 from .models import Tenant, Payment
 from .serializers import TenantSerializer, PaymentSerializer
+from .utils import generate_receipt_pdf  # Import our new PDF utility
 
 # --- Helper Function for SMS ---
 
@@ -190,3 +191,26 @@ def landlord_dashboard(request):
         'recent_payments': recent_payments,
         'search_query': search_query
     })
+
+# --- PDF Receipt View ---
+
+@login_required
+def download_receipt(request, payment_id):
+    """Generates and returns a PDF receipt for a specific payment."""
+    # Ensure the tenant can only download THEIR OWN receipts
+    payment = get_object_or_404(Payment, id=payment_id, tenant__user=request.user)
+    
+    if payment.status != 'PAID':
+        return HttpResponse("Receipt only available for completed payments.", status=400)
+
+    # 1. Generate the PDF bytes
+    pdf_content = generate_receipt_pdf(payment)
+    
+    # 2. Force the content into an HttpResponse as raw bytes
+    response = HttpResponse(bytes(pdf_content), content_type='application/pdf')
+    
+    # 3. Set the download headers
+    filename = f"Receipt_{payment.mpesa_receipt or payment.id}.pdf"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    
+    return response
