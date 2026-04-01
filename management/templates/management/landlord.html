@@ -6,11 +6,14 @@
     <title>Landlord Overview | Ke-Rental</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        .card { border: none; border-radius: 12px; }
+        .card { border: none; border-radius: 12px; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); }
         .table { border-radius: 12px; overflow: hidden; }
         .badge-paid { background-color: #198754; }
         .badge-pending { background-color: #ffc107; color: #000; }
+        .badge-charge { background-color: #6f42c1; } /* Purple for Invoices */
         .auth-header { border-bottom: 1px solid #444; padding: 10px 0; margin-bottom: 30px; }
+        .text-purple { color: #d63384; }
     </style>
 </head>
 <body class="bg-dark text-white">
@@ -20,7 +23,6 @@
             <h5 class="mb-0 text-info">Ke-Rental System</h5>
             <div class="d-flex align-items-center">
                 <span class="me-3 text-white-50 small">Logged in as <strong>{{ user.username }}</strong></span>
-                
                 <form action="/admin/logout/?next=/landlord/" method="post">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-outline-danger">Logout</button>
@@ -31,19 +33,27 @@
         <h2 class="mb-4">Property Financial Overview</h2>
         
         <div class="row mb-5">
-            <div class="col-md-6 mb-3">
+            <div class="col-md-4 mb-3">
                 <div class="card bg-primary text-white shadow">
                     <div class="card-body p-4">
-                        <h5 class="text-white-50">Total Outstanding (Debt)</h5>
-                        <h2 class="display-5 fw-bold">KES {{ total_expected }}</h2>
+                        <h5 class="text-white-50">Total Billed (April)</h5>
+                        <h2 class="fw-bold">KES {{ total_billed }}</h2>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-4 mb-3">
                 <div class="card bg-success text-white shadow">
                     <div class="card-body p-4">
-                        <h5 class="text-white-50">Total Collected (M-Pesa)</h5>
-                        <h2 class="display-5 fw-bold">KES {{ total_collected }}</h2>
+                        <h5 class="text-white-50">Total Collected (Cash)</h5>
+                        <h2 class="fw-bold">KES {{ total_collected }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card bg-danger text-white shadow">
+                    <div class="card-body p-4">
+                        <h5 class="text-white-50">Total Outstanding (Debt)</h5>
+                        <h2 class="fw-bold">KES {{ total_outstanding }}</h2>
                     </div>
                 </div>
             </div>
@@ -57,13 +67,13 @@
             </form>
         </div>
 
-        <table class="table table-dark table-hover shadow-sm mb-5">
+        <table class="table table-dark table-hover shadow-sm mb-5 align-middle">
             <thead>
                 <tr class="table-active">
                     <th>Tenant</th>
                     <th>Unit</th>
                     <th>Balance</th>
-                    <th>Actions</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -72,14 +82,14 @@
                     <td>{{ tenant.name }}</td>
                     <td>{{ tenant.unit.house_number }}</td>
                     <td class="{% if tenant.balance > 0 %}text-danger{% else %}text-success fw-bold{% endif %}">
-                        {% if tenant.balance > 0 %}
-                            KES {{ tenant.balance }}
-                        {% else %}
-                            CLEARED ✅
-                        {% endif %}
+                        KES {{ tenant.balance }}
                     </td>
                     <td>
-                        <a href="{% url 'tenant-dashboard' tenant.id %}" class="btn btn-sm btn-light">Details</a>
+                        {% if tenant.balance <= 0 %}
+                            <span class="badge bg-success">CLEARED ✅</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">ARREARS</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
@@ -91,11 +101,12 @@
         </table>
 
         <h4 class="mb-3">Global Transaction Log (Recent 10)</h4>
-        <table class="table table-dark table-sm table-striped shadow-sm">
+        <table class="table table-dark table-sm table-striped shadow-sm align-middle">
             <thead>
-                <tr class="text-muted">
+                <tr class="text-muted small">
                     <th>Date</th>
                     <th>Tenant</th>
+                    <th>Type</th>
                     <th>Amount</th>
                     <th>Receipt</th>
                     <th>Status</th>
@@ -106,17 +117,26 @@
                 <tr>
                     <td>{{ payment.date_created|date:"M d, H:i" }}</td>
                     <td>{{ payment.tenant.name }}</td>
-                    <td>{{ payment.amount }}</td>
+                    <td>
+                        <span class="badge {% if payment.transaction_type == 'CHARGE' %}badge-charge{% else %}badge-info text-dark{% endif %}">
+                            {{ payment.get_transaction_type_display }}
+                        </span>
+                    </td>
+                    <td>KES {{ payment.amount }}</td>
                     <td><small class="text-info">{{ payment.mpesa_receipt|default:"--" }}</small></td>
                     <td>
-                        <span class="badge {% if payment.status == 'PAID' %}badge-paid{% else %}badge-pending{% endif %}">
-                            {{ payment.status }}
-                        </span>
+                        {% if payment.transaction_type == 'CHARGE' %}
+                            <span class="badge bg-secondary">BILLED</span>
+                        {% else %}
+                            <span class="badge {% if payment.status == 'PAID' %}badge-paid{% else %}badge-pending{% endif %}">
+                                {{ payment.status }}
+                            </span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="5" class="text-center text-muted">No transactions recorded yet.</td>
+                    <td colspan="6" class="text-center text-muted">No transactions recorded yet.</td>
                 </tr>
                 {% endfor %}
             </tbody>

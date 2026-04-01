@@ -5,6 +5,7 @@ class Property(models.Model):
     """The 'Plot' or 'Apartment' name (e.g., Sunrise Apartments)."""
     name = models.CharField(max_length=200)
     location = models.CharField(max_length=200)
+    landlord = models.ForeignKey(User, on_delete=models.CASCADE, related_name="managed_properties", null=True)
 
     class Meta:
         verbose_name_plural = "Properties"
@@ -24,7 +25,6 @@ class Unit(models.Model):
 
 class Tenant(models.Model):
     """The person currently occupying a unit."""
-    # This connects the Tenant record to a System Login (User)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='tenant_profile', null=True, blank=True)
     name = models.CharField(max_length=200)
     phone_number = models.CharField(max_length=15)
@@ -35,17 +35,24 @@ class Tenant(models.Model):
         return self.name
 
 class Payment(models.Model):
-    """Logs for M-Pesa Transactions."""
+    """Logs for Transactions and Invoices."""
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('PAID', 'Paid'),
         ('FAILED', 'Failed'),
     ]
 
+    TYPE_CHOICES = [
+        ('MPESA', 'M-Pesa Payment'),
+        ('CHARGE', 'Monthly Rent Charge'),
+        ('MANUAL', 'Manual Adjustment'),
+    ]
+
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="payments")
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+    transaction_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='MPESA')
     
-    # Tracking IDs from Safaricom
+    # Tracking IDs from Safaricom (Only for MPESA types)
     checkout_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     mpesa_receipt = models.CharField(max_length=20, unique=True, null=True, blank=True)
     
@@ -54,4 +61,4 @@ class Payment(models.Model):
     date_updated = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.tenant.name} - {self.amount} ({self.status})"
+        return f"{self.tenant.name} - {self.amount} ({self.transaction_type})"
