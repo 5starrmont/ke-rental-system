@@ -10,6 +10,8 @@
         .stats-outstanding { border-left-color: #dc3545; }
         .table-container { background: white; border-radius: 8px; padding: 20px; }
         .water-input { width: 80px !important; }
+        .action-card { border-top: 4px solid #6f42c1; }
+        .reading-badge { font-size: 0.85rem; padding: 0.4em 0.6em; }
     </style>
 </head>
 <body class="bg-light">
@@ -53,7 +55,7 @@
 
         <div class="row">
             <div class="col-md-9">
-                <div class="table-container shadow-sm border">
+                <div class="table-container shadow-sm border mb-4">
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h5 class="mb-0 fw-bold">Tenant & Utility Overview</h5>
                         <form method="GET" class="d-flex">
@@ -67,7 +69,7 @@
                             <thead class="table-light">
                                 <tr>
                                     <th>Tenant / Unit</th>
-                                    <th>Water Reading</th>
+                                    <th>Water (Prev → New)</th>
                                     <th>Utilities Enabled</th>
                                     <th>Current Balance</th>
                                     <th class="text-center">Action</th>
@@ -82,15 +84,21 @@
                                     </td>
                                     <td>
                                         {% if tenant.unit.has_water %}
-                                        <div class="input-group input-group-sm" style="width: 160px;">
-                                            <input type="number" 
-                                                   id="water-{{ tenant.unit.id }}" 
-                                                   class="form-control water-input" 
-                                                   value="{{ tenant.unit.last_water_reading }}" 
-                                                   step="0.1" 
-                                                   placeholder="Units">
-                                            <button class="btn btn-primary" onclick="saveWater('{{ tenant.unit.id }}')">Save</button>
+                                        <div class="d-flex align-items-center mb-1">
+                                            <span class="badge bg-light text-dark border reading-badge" title="Last Month's Final Reading">
+                                                {{ tenant.unit.previous_water_reading }}
+                                            </span>
+                                            <span class="mx-2 text-muted">→</span>
+                                            <div class="input-group input-group-sm" style="width: 140px;">
+                                                <input type="number" 
+                                                       id="water-{{ tenant.unit.id }}" 
+                                                       class="form-control water-input" 
+                                                       value="{{ tenant.unit.last_water_reading }}" 
+                                                       step="0.1">
+                                                <button class="btn btn-primary" onclick="saveWater('{{ tenant.unit.id }}')">Save</button>
+                                            </div>
                                         </div>
+                                        <small class="text-muted d-block" style="font-size: 0.7rem;">Enter current meter reading</small>
                                         {% else %}
                                         <span class="text-muted small">Not Metered</span>
                                         {% endif %}
@@ -119,6 +127,16 @@
             </div>
 
             <div class="col-md-3">
+                <div class="table-container shadow-sm border mb-4 action-card">
+                    <h6 class="fw-bold mb-3">Billing Actions</h6>
+                    <button id="invoiceBtn" onclick="generateInvoices()" class="btn btn-purple btn-sm w-100 text-white" style="background-color: #6f42c1;">
+                        Run Monthly Billing
+                    </button>
+                    <p class="text-muted x-small mt-2 mb-0" style="font-size: 0.7rem;">
+                        This will calculate consumption (New - Prev) and generate charges for all units.
+                    </p>
+                </div>
+
                 <div class="table-container shadow-sm border">
                     <h6 class="mb-3 fw-bold">Global Activity</h6>
                     <div class="list-group list-group-flush">
@@ -145,12 +163,37 @@
     </div>
 
     <script>
+        function generateInvoices() {
+            if (!confirm("Are you sure? This will calculate water consumption (New - Prev) and update all tenant balances.")) return;
+            
+            const btn = document.getElementById('invoiceBtn');
+            btn.innerText = "Generating...";
+            btn.disabled = true;
+
+            fetch('{% url "generate-invoices" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                location.reload();
+            })
+            .catch(error => {
+                alert("An error occurred during billing.");
+                btn.innerText = "Run Monthly Billing";
+                btn.disabled = false;
+            });
+        }
+
         function saveWater(unitId) {
             const readingInput = document.getElementById(`water-${unitId}`);
             const readingValue = readingInput.value;
             const originalBtn = event.target;
             
-            // Visual feedback
             originalBtn.innerText = "...";
             originalBtn.disabled = true;
 
@@ -170,7 +213,6 @@
                 if(data.status === 'success') {
                     originalBtn.innerText = "Saved";
                     originalBtn.classList.replace('btn-primary', 'btn-success');
-                    
                     setTimeout(() => {
                         originalBtn.innerText = "Save";
                         originalBtn.classList.replace('btn-success', 'btn-primary');
@@ -183,7 +225,6 @@
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
                 alert("Failed to connect to server.");
                 originalBtn.innerText = "Save";
                 originalBtn.disabled = false;

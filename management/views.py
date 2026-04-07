@@ -1,5 +1,7 @@
 import africastalking
 import time
+import decimal
+from datetime import timedelta
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, get_object_or_404
@@ -14,9 +16,9 @@ from rest_framework.response import Response
 
 from django_daraja.mpesa.core import MpesaClient
 
-from .models import Tenant, Payment, Unit, Property
+from .models import Tenant, Payment, Unit, Property, MaintenanceRequest
 from .serializers import TenantSerializer, PaymentSerializer
-from .utils import generate_receipt_pdf  # Import our new PDF utility
+from .utils import generate_receipt_pdf  # Import our updated PDF utility
 
 # --- Helper Function for SMS ---
 
@@ -169,9 +171,12 @@ def tenant_dashboard(request, tenant_id=None):
             tenant = request.user.tenant_profile
             
         payments = tenant.payments.all().order_by('-date_created')
+        maintenance_requests = tenant.maintenance_requests.all().order_by('-date_reported')
+
         return render(request, 'management/dashboard.html', {
             'tenant': tenant,
             'payments': payments,
+            'maintenance_requests': maintenance_requests,
             'is_landlord_view': is_landlord_view
         })
     except (AttributeError, Tenant.DoesNotExist):
@@ -204,6 +209,8 @@ def landlord_dashboard(request):
         'search_query': search_query
     })
 
+# --- AJAX Action Views ---
+
 @login_required
 @api_view(['POST'])
 def update_water_reading(request):
@@ -219,23 +226,131 @@ def update_water_reading(request):
     except Unit.DoesNotExist:
         return JsonResponse({'status': 'error', 'message': 'Unit not found'}, status=404)
 
-# --- PDF Receipt View ---
+@login_required
+@api_view(['POST'])
+def report_maintenance(request):
+    """Allows a tenant to submit a maintenance request via AJAX."""
+    try:
+        tenant = request.user.tenant_profile
+        title = request.data.get('title')
+        description = request.data.get('description')
+        is_emergency = request.data.get('is_emergency', False)
+
+        if not title or not description:
+            return JsonResponse({'status': 'error', 'message': 'Title and Description are required.'}, status=400)
+
+        MaintenanceRequest.objects.create(
+            tenant=tenant,
+            title=title,
+            description=description,
+            is_emergency=is_emergency
+        )
+        return JsonResponse({'status': 'success', 'message': 'Request submitted successfully!'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+@login_required
+@api_view(['POST'])
+def generate_monthly_invoices(request):
+    """Loop through all tenants and generate charges based on actual water consumption."""
+    if not request.user.is_staff:
+        return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
+
+    tenants = Tenant.objects.filter(unit__is_occupied=True)
+    count = 0
+
+    for tenant in tenants:
+        unit = tenant.unit
+        prop = unit.property
+        total_amount = unit.monthly_rent
+        breakdown = [f"Rent: {unit.monthly_rent}"]
+
+        # 1. Garbage Fee
+        if unit.has_garbage:
+            total_amount += unit.garbage_fee
+            breakdown.append(f"Garbage: {unit.garbage_fee}")
+
+        # 2. Dynamic Water Calculation
+        if unit.has_water:
+            # Consumed = New Reading - Previous Reading
+            consumed = unit.last_water_reading - unit.previous_water_reading
+            
+            # Prevent negative billing if reading was reset or entered wrong
+            if consumed < 0:
+                consumed = 0
+            
+            water_total = decimal.Decimal(consumed) * prop.water_rate_per_unit
+            total_amount += water_total
+            breakdown.append(f"Water ({consumed} units): {water_total}")
+            
+            # Reset reading: Current reading becomes the 'previous' for next month
+            unit.previous_water_reading = unit.last_water_reading
+            unit.save()
+
+        # 3. Create the Charge record
+        Payment.objects.create(
+            tenant=tenant,
+            amount=total_amount,
+            transaction_type='CHARGE',
+            status='PAID',
+            note=", ".join(breakdown)
+        )
+
+        # Update Tenant Balance
+        tenant.balance += total_amount
+        tenant.save()
+        count += 1
+
+    return JsonResponse({'status': 'success', 'message': f'Invoices generated for {count} tenants.'})
+
+# --- Web & PDF Invoice/Receipt Views ---
+
+@login_required
+def view_invoice(request, payment_id):
+    """Renders a web-based itemized view of an invoice with specific dates."""
+    payment = get_object_or_404(Payment, id=payment_id)
+    
+    if not request.user.is_staff and payment.tenant.user != request.user:
+        return HttpResponse("Unauthorized", status=403)
+    
+    # Calculate Billing Period (30 days prior to invoice date)
+    start_date = payment.date_created - timedelta(days=30)
+    end_date = payment.date_created
+
+    breakdown = []
+    if payment.note:
+        items = payment.note.split(', ')
+        for item in items:
+            if ':' in item:
+                parts = item.split(': ')
+                breakdown.append({'desc': parts[0], 'amt': parts[1]})
+    
+    return render(request, 'management/invoice_detail.html', {
+        'payment': payment,
+        'breakdown': breakdown,
+        'property': payment.tenant.unit.property,
+        'start_date': start_date,
+        'end_date': end_date
+    })
 
 @login_required
 def download_receipt(request, payment_id):
-    """Generates and returns a PDF receipt for a specific payment."""
+    """Generates and returns a PDF receipt (MPESA) or Invoice (CHARGE)."""
     payment = get_object_or_404(Payment, id=payment_id)
     
     # Permission check: User must be staff or own the tenant profile
     if not request.user.is_staff and payment.tenant.user != request.user:
          return HttpResponse("Unauthorized", status=403)
     
-    if payment.status != 'PAID':
-        return HttpResponse("Receipt only available for completed payments.", status=400)
-
+    # Fetch content from our itemized generator
     pdf_content = generate_receipt_pdf(payment)
     response = HttpResponse(bytes(pdf_content), content_type='application/pdf')
-    filename = f"Receipt_{payment.mpesa_receipt or payment.id}.pdf"
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    
+    # Determine filename prefix
+    prefix = "Receipt" if payment.transaction_type == 'MPESA' else "Invoice"
+    filename = f"{prefix}_{payment.mpesa_receipt or payment.id}.pdf"
+    
+    # 'inline' opens it in the browser tab instead of downloading directly
+    response['Content-Disposition'] = f'inline; filename="{filename}"'
     
     return response

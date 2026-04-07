@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>{% if is_landlord_view %}Admin: {{ tenant.name }}{% else %}Tenant Dashboard{% endif %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <style>
         .badge-charge { background-color: #6f42c1; color: white; } /* Purple for Invoices */
         .badge-payment { background-color: #0d6efd; color: white; } /* Blue for M-Pesa */
@@ -22,16 +23,25 @@
                 </div>
                 {% endif %}
 
-                <div class="card shadow border-0">
+                <div class="card shadow border-0 mb-4">
                     <div class="card-body text-center p-5">
-                        {% if is_landlord_view %}
-                            <h2 class="fw-bold">Managing: {{ tenant.name }}</h2>
-                            <span class="badge bg-primary mb-3">Admin View</span>
-                        {% else %}
-                            <h2 class="fw-bold">Welcome, {{ tenant.name }}</h2>
-                        {% endif %}
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="text-start">
+                                {% if is_landlord_view %}
+                                    <h2 class="fw-bold">Managing: {{ tenant.name }}</h2>
+                                    <span class="badge bg-primary mb-3">Admin View</span>
+                                {% else %}
+                                    <h2 class="fw-bold">Welcome, {{ tenant.name }}</h2>
+                                {% endif %}
+                                <p class="text-muted">Unit: {{ tenant.unit.house_number }}</p>
+                            </div>
+                            {% if not is_landlord_view %}
+                            <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#maintenanceModal">
+                                Report Issue
+                            </button>
+                            {% endif %}
+                        </div>
                         
-                        <p class="text-muted">Unit: {{ tenant.unit.house_number }}</p>
                         <hr class="my-4">
                         
                         <h5 class="text-secondary mb-2">Current Balance</h5>
@@ -64,7 +74,7 @@
                                     <th>Date</th>
                                     <th>Type</th>
                                     <th>Amount</th>
-                                    <th>Receipt</th>
+                                    <th>Receipt / Invoice</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -80,21 +90,21 @@
                                     <td class="fw-semibold">KES {{ payment.amount }}</td>
                                     <td>
                                         {% if payment.transaction_type == 'MPESA' and payment.status == 'PAID' %}
-                                            <a href="{% url 'download_receipt' payment.id %}" class="btn btn-sm btn-outline-primary">
-                                                {{ payment.mpesa_receipt|default:"Download" }}
+                                            <a href="{% url 'download_receipt' payment.id %}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                {{ payment.mpesa_receipt|default:"View Receipt" }}
+                                            </a>
+                                        {% elif payment.transaction_type == 'CHARGE' %}
+                                            <a href="{% url 'view-invoice' payment.id %}" class="btn btn-sm btn-outline-secondary">
+                                                View Invoice
                                             </a>
                                         {% else %}
                                             <span class="text-muted small">--</span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if payment.transaction_type == 'CHARGE' %}
-                                            <span class="badge bg-secondary">BILLED</span>
-                                        {% else %}
-                                            <span class="badge {% if payment.status == 'PAID' %}bg-success{% elif payment.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
-                                                {{ payment.status }}
-                                            </span>
-                                        {% endif %}
+                                        <span class="badge {% if payment.status == 'PAID' or payment.status == 'BILLED' %}bg-success{% elif payment.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                                            {{ payment.status }}
+                                        </span>
                                     </td>
                                 </tr>
                                 {% empty %}
@@ -106,12 +116,125 @@
                         </table>
                     </div>
                 </div>
+
+                <div class="mt-5">
+                    <h5 class="mb-3">Maintenance Requests</h5>
+                    <div class="table-responsive shadow-sm rounded">
+                        <table class="table table-hover bg-white mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Issue</th>
+                                    <th>Status</th>
+                                    <th>Urgency</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for req in maintenance_requests %}
+                                <tr>
+                                    <td class="text-muted">{{ req.date_reported|date:"M d, Y" }}</td>
+                                    <td>
+                                        <div class="fw-bold">{{ req.title }}</div>
+                                        <div class="small text-muted">{{ req.description|truncatechars:50 }}</div>
+                                    </td>
+                                    <td>
+                                        <span class="badge 
+                                            {% if req.status == 'PENDING' %}bg-warning text-dark
+                                            {% elif req.status == 'IN_PROGRESS' %}bg-primary
+                                            {% elif req.status == 'RESOLVED' %}bg-success
+                                            {% else %}bg-secondary{% endif %}">
+                                            {{ req.status }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if req.is_emergency %}
+                                            <span class="text-danger small fw-bold">Emergency</span>
+                                        {% else %}
+                                            <span class="text-muted small">Normal</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-4 text-muted">No maintenance issues reported.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="maintenanceModal" tabindex="-1" aria-labelledby="maintenanceModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="maintenanceModalLabel">Report Maintenance Issue</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="maintTitle" class="form-label">Issue Title</label>
+                        <input type="text" class="form-control" id="maintTitle" placeholder="e.g., Leaking Kitchen Tap">
+                    </div>
+                    <div class="mb-3">
+                        <label for="maintDesc" class="form-label">Description</label>
+                        <textarea class="form-control" id="maintDesc" rows="3" placeholder="Provide more details..."></textarea>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="maintEmergency">
+                        <label class="form-check-label" for="maintEmergency">
+                            This is an emergency
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" onclick="submitMaintenance()" class="btn btn-danger">Submit Request</button>
+                </div>
             </div>
         </div>
     </div>
 
     {% if not is_landlord_view %}
     <script>
+        function submitMaintenance() {
+            const title = document.getElementById('maintTitle').value;
+            const description = document.getElementById('maintDesc').value;
+            const is_emergency = document.getElementById('maintEmergency').checked;
+
+            if (!title || !description) {
+                alert("Please provide both a title and description.");
+                return;
+            }
+
+            fetch('{% url "report-maintenance" %}', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ 
+                    title: title, 
+                    description: description,
+                    is_emergency: is_emergency 
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert("Error: " + data.message);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
         function payRent(event) {
             const tenantId = "{{ tenant.id }}"; 
             const amountInput = document.getElementById('paymentAmount');

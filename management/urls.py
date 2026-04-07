@@ -20,9 +20,14 @@ urlpatterns = [
     path('dashboard/<int:tenant_id>/', views.tenant_dashboard, name='tenant-dashboard-detail'),
     path('landlord/', views.landlord_dashboard, name='landlord-dashboard'),
 
-    # NEW: AJAX path for updating utility readings
-    path('update-water-reading/', views.update_water_reading, name='update-water-reading'),
+    # Web-based Itemized Invoice View
+    path('invoice/<int:payment_id>/', views.view_invoice, name='view-invoice'),
 
-    # NEW: PDF Receipt Download Path
+    # AJAX Action Paths
+    path('update-water-reading/', views.update_water_reading, name='update-water-reading'),
+    path('report-maintenance/', views.report_maintenance, name='report-maintenance'),
+    path('generate-invoices/', views.generate_monthly_invoices, name='generate-invoices'),
+
+    # PDF Receipt/Invoice Download Path
     path('download-receipt/<int:payment_id>/', views.download_receipt, name='download_receipt'),
 ]

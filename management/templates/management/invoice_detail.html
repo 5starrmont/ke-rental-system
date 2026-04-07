@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice - {{ payment.id }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .invoice-box {
+            max-width: 800px;
+            margin: auto;
+            padding: 30px;
+            border: 1px solid #eee;
+            background-color: #fff;
+        }
+        .invoice-header {
+            border-bottom: 2px solid #6f42c1;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .text-purple { color: #6f42c1; }
+        @media print {
+            .d-print-none { display: none !important; }
+            .invoice-box { border: none; box-shadow: none; }
+        }
+    </style>
+</head>
+<body class="bg-light py-5">
+
+<div class="container">
+    <div class="mb-4 text-center d-print-none">
+        <a href="{% url 'tenant-dashboard' %}" class="btn btn-outline-secondary btn-sm">← Back to Dashboard</a>
+        <a href="{% url 'download_receipt' payment.id %}" target="_blank" class="btn btn-primary btn-sm ms-2">Download as PDF</a>
+    </div>
+
+    <div class="invoice-box shadow-sm">
+        <div class="invoice-header d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="fw-bold text-purple">RENT INVOICE</h2>
+                <p class="mb-0 text-muted">Invoice #: INV-{{ payment.id }}</p>
+                <p class="mb-0 text-muted">Date: {{ payment.date_created|date:"d M Y" }}</p>
+            </div>
+            <div class="text-end">
+                <h4 class="fw-bold mb-0">{{ property.name }}</h4>
+                <p class="text-muted small mb-0">{{ property.location }}</p>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-6">
+                <h6 class="text-uppercase text-muted small fw-bold">Billed To:</h6>
+                <p class="mb-0 fw-bold">{{ payment.tenant.name }}</p>
+                <p class="mb-0">Unit: {{ payment.tenant.unit.house_number }}</p>
+            </div>
+            <div class="col-6 text-end">
+                <h6 class="text-uppercase text-muted small fw-bold">Billing Period:</h6>
+                <p class="mb-0">{{ start_date|date:"d M Y" }} to {{ end_date|date:"d M Y" }}</p>
+                <small class="text-muted">Payment due upon receipt</small>
+            </div>
+        </div>
+
+        <table class="table table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th>Description</th>
+                    <th class="text-end" style="width: 200px;">Amount (KES)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if breakdown %}
+                    {% for item in breakdown %}
+                    <tr>
+                        <td>{{ item.desc }}</td>
+                        <td class="text-end">{{ item.amt }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td>Monthly Rent & Utilities</td>
+                        <td class="text-end">{{ payment.amount }}</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light">
+                    <th class="text-end">TOTAL DUE</th>
+                    <th class="text-end text-purple fs-5">KES {{ payment.amount }}</th>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="mt-5 p-3 bg-light rounded border">
+            <h6>Payment Instructions:</h6>
+            <p class="small mb-0 text-muted">
+                Please pay via the <strong>Ke-Rental Tenant Dashboard</strong> using M-Pesa. 
+                Your balance will be updated automatically upon successful payment.
+            </p>
+        </div>
+
+        <div class="mt-4 text-center">
+            <p class="small text-muted">Thank you for being a valued tenant at {{ property.name }}.</p>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
