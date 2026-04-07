@@ -20,6 +20,9 @@ urlpatterns = [
     path('dashboard/<int:tenant_id>/', views.tenant_dashboard, name='tenant-dashboard-detail'),
     path('landlord/', views.landlord_dashboard, name='landlord-dashboard'),
 
+    # NEW: AJAX path for updating utility readings
+    path('update-water-reading/', views.update_water_reading, name='update-water-reading'),
+
     # NEW: PDF Receipt Download Path
     path('download-receipt/<int:payment_id>/', views.download_receipt, name='download_receipt'),
 ]

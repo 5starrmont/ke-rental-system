@@ -2,87 +2,115 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Tenant Dashboard</title>
+    <title>{% if is_landlord_view %}Admin: {{ tenant.name }}{% else %}Tenant Dashboard{% endif %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .badge-charge { background-color: #6f42c1; color: white; } /* Purple for Invoices */
         .badge-payment { background-color: #0d6efd; color: white; } /* Blue for M-Pesa */
         .payment-input-group { max-width: 300px; margin: 0 auto; }
+        .back-btn { text-decoration: none; font-size: 0.9rem; }
     </style>
 </head>
 <body class="bg-light">
-    <div class="container mt-5">
+    <div class="container mt-5 pb-5">
         <div class="row justify-content-center">
             <div class="col-md-10"> 
-                <div class="card shadow">
-                    <div class="card-body text-center">
-                        <h2 class="card-title">Welcome, {{ tenant.name }}</h2>
+                
+                {% if is_landlord_view %}
+                <div class="mb-3">
+                    <a href="{% url 'landlord-dashboard' %}" class="back-btn text-secondary">← Back to Landlord Command Center</a>
+                </div>
+                {% endif %}
+
+                <div class="card shadow border-0">
+                    <div class="card-body text-center p-5">
+                        {% if is_landlord_view %}
+                            <h2 class="fw-bold">Managing: {{ tenant.name }}</h2>
+                            <span class="badge bg-primary mb-3">Admin View</span>
+                        {% else %}
+                            <h2 class="fw-bold">Welcome, {{ tenant.name }}</h2>
+                        {% endif %}
+                        
                         <p class="text-muted">Unit: {{ tenant.unit.house_number }}</p>
-                        <hr>
-                        <h4 class="mt-4">Current Balance</h4>
-                        <h1 class="display-4 {% if tenant.balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                        <hr class="my-4">
+                        
+                        <h5 class="text-secondary mb-2">Current Balance</h5>
+                        <h1 class="display-3 fw-bold {% if tenant.balance > 0 %}text-danger{% else %}text-success{% endif %}">
                             KES {{ tenant.balance }}
                         </h1>
                         
+                        {% if not is_landlord_view %}
                         <div class="payment-input-group mt-4">
                             <div class="input-group mb-3">
-                                <span class="input-group-text">KES</span>
-                                <input type="number" id="paymentAmount" class="form-control form-control-lg" value="1" min="1">
+                                <span class="input-group-text bg-white border-end-0">KES</span>
+                                <input type="number" id="paymentAmount" class="form-control form-control-lg border-start-0" value="1" min="1">
                             </div>
-                            <button onclick="payRent(event)" class="btn btn-success btn-lg w-100">Pay Now</button>
+                            <button onclick="payRent(event)" class="btn btn-success btn-lg w-100 shadow-sm">Pay Now</button>
                         </div>
+                        {% else %}
+                        <div class="alert alert-light border mt-4 d-inline-block px-4">
+                            <small class="text-muted">Payment actions are disabled in Admin Mode.</small>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 
                 <div class="mt-5">
-                    <h5>Recent Transactions</h5>
-                    <table class="table table-striped bg-white shadow-sm align-middle">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Amount</th>
-                                <th>Receipt</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for payment in payments %}
-                            <tr>
-                                <td>{{ payment.date_created|date:"M d, Y" }}</td>
-                                <td>
-                                    <span class="badge {% if payment.transaction_type == 'CHARGE' %}badge-charge{% else %}badge-payment{% endif %}">
-                                        {{ payment.get_transaction_type_display }}
-                                    </span>
-                                </td>
-                                <td>KES {{ payment.amount }}</td>
-                                <td>
-                                    {% if payment.transaction_type == 'MPESA' and payment.status == 'PAID' %}
-                                        <a href="{% url 'download_receipt' payment.id %}" class="btn btn-sm btn-outline-primary">
-                                            {{ payment.mpesa_receipt|default:"Download" }}
-                                        </a>
-                                    {% else %}
-                                        <code class="text-muted">--</code>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if payment.transaction_type == 'CHARGE' %}
-                                        <span class="badge bg-secondary">BILLED</span>
-                                    {% else %}
-                                        <span class="badge {% if payment.status == 'PAID' %}bg-success{% elif payment.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
-                                            {{ payment.status }}
+                    <h5 class="mb-3">Recent Transactions</h5>
+                    <div class="table-responsive shadow-sm rounded">
+                        <table class="table table-hover bg-white mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Receipt</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in payments %}
+                                <tr>
+                                    <td class="text-muted">{{ payment.date_created|date:"M d, Y" }}</td>
+                                    <td>
+                                        <span class="badge {% if payment.transaction_type == 'CHARGE' %}badge-charge{% else %}badge-payment{% endif %}">
+                                            {{ payment.get_transaction_type_display }}
                                         </span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    </td>
+                                    <td class="fw-semibold">KES {{ payment.amount }}</td>
+                                    <td>
+                                        {% if payment.transaction_type == 'MPESA' and payment.status == 'PAID' %}
+                                            <a href="{% url 'download_receipt' payment.id %}" class="btn btn-sm btn-outline-primary">
+                                                {{ payment.mpesa_receipt|default:"Download" }}
+                                            </a>
+                                        {% else %}
+                                            <span class="text-muted small">--</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if payment.transaction_type == 'CHARGE' %}
+                                            <span class="badge bg-secondary">BILLED</span>
+                                        {% else %}
+                                            <span class="badge {% if payment.status == 'PAID' %}bg-success{% elif payment.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                                                {{ payment.status }}
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center py-4 text-muted">No transactions found.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    {% if not is_landlord_view %}
     <script>
         function payRent(event) {
             const tenantId = "{{ tenant.id }}"; 
@@ -125,5 +153,6 @@
             });
         }
     </script>
+    {% endif %}
 </body>
 </html>

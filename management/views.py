@@ -14,7 +14,7 @@ from rest_framework.response import Response
 
 from django_daraja.mpesa.core import MpesaClient
 
-from .models import Tenant, Payment
+from .models import Tenant, Payment, Unit, Property
 from .serializers import TenantSerializer, PaymentSerializer
 from .utils import generate_receipt_pdf  # Import our new PDF utility
 
@@ -153,18 +153,30 @@ def mpesa_callback(request):
 # --- Dashboard Views ---
 
 @login_required
-def tenant_dashboard(request):
-    """Shows the dashboard ONLY for the logged-in tenant."""
+def tenant_dashboard(request, tenant_id=None):
+    """
+    Shows the dashboard. 
+    Uses 'is_landlord_view' flag to toggle management vs user UI.
+    """
     try:
-        tenant = request.user.tenant_profile
+        is_landlord_view = False
+        if tenant_id:
+            # Viewing a specific tenant (Admin/Landlord mode)
+            tenant = get_object_or_404(Tenant, id=tenant_id)
+            is_landlord_view = True
+        else:
+            # Viewing own profile (Tenant mode)
+            tenant = request.user.tenant_profile
+            
         payments = tenant.payments.all().order_by('-date_created')
         return render(request, 'management/dashboard.html', {
             'tenant': tenant,
-            'payments': payments
+            'payments': payments,
+            'is_landlord_view': is_landlord_view
         })
     except (AttributeError, Tenant.DoesNotExist):
         return render(request, 'management/dashboard.html', {
-            'error': "No tenant profile linked to this account."
+            'error': "No tenant profile found or linked to this account."
         })
 
 @login_required
@@ -192,24 +204,37 @@ def landlord_dashboard(request):
         'search_query': search_query
     })
 
+@login_required
+@api_view(['POST'])
+def update_water_reading(request):
+    """Updates the water units consumed for a specific unit via AJAX."""
+    unit_id = request.data.get('unit_id')
+    reading = request.data.get('reading')
+
+    try:
+        unit = Unit.objects.get(id=unit_id)
+        unit.last_water_reading = reading
+        unit.save()
+        return JsonResponse({'status': 'success', 'message': f'Units updated for {unit.house_number}'})
+    except Unit.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Unit not found'}, status=404)
+
 # --- PDF Receipt View ---
 
 @login_required
 def download_receipt(request, payment_id):
     """Generates and returns a PDF receipt for a specific payment."""
-    # Ensure the tenant can only download THEIR OWN receipts
-    payment = get_object_or_404(Payment, id=payment_id, tenant__user=request.user)
+    payment = get_object_or_404(Payment, id=payment_id)
+    
+    # Permission check: User must be staff or own the tenant profile
+    if not request.user.is_staff and payment.tenant.user != request.user:
+         return HttpResponse("Unauthorized", status=403)
     
     if payment.status != 'PAID':
         return HttpResponse("Receipt only available for completed payments.", status=400)
 
-    # 1. Generate the PDF bytes
     pdf_content = generate_receipt_pdf(payment)
-    
-    # 2. Force the content into an HttpResponse as raw bytes
     response = HttpResponse(bytes(pdf_content), content_type='application/pdf')
-    
-    # 3. Set the download headers
     filename = f"Receipt_{payment.mpesa_receipt or payment.id}.pdf"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     

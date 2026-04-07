@@ -29,11 +29,29 @@ def send_payment_confirmation(tenant, amount):
         logger.error(f"SMS Failed for {tenant.name}: {str(e)}")
         return None
 
+def send_invoice_notification(tenant, rent_amount, month_name):
+    """Sends an SMS alert when a new monthly rent charge is generated."""
+    phone = tenant.phone_number
+    if not phone.startswith('+'):
+        phone = f"+254{phone.lstrip('0')}"
+
+    message = (
+        f"Hello {tenant.name}, your rent for {month_name} of KES {rent_amount} has been invoiced. "
+        f"Your new balance is KES {tenant.balance}. Please pay via the Ke-Rental portal."
+    )
+
+    try:
+        response = sms.send(message, [phone])
+        logger.info(f"Invoice SMS Sent to {tenant.name}: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"Invoice SMS Failed for {tenant.name}: {str(e)}")
+        return None
+
 # --- PDF Generation Logic ---
 
 class ReceiptPDF(FPDF):
     def header(self):
-        # Using helvetica as it's a standard core font
         self.set_font('helvetica', 'B', 15)
         self.cell(0, 10, 'KE-RENTAL OFFICIAL RECEIPT', 0, 1, 'C')
         self.ln(5)
@@ -48,34 +66,28 @@ def generate_receipt_pdf(payment):
     pdf = ReceiptPDF()
     pdf.add_page()
     
-    # Property Info
     pdf.set_font("helvetica", 'B', 12)
     pdf.cell(0, 10, f"Property: {payment.tenant.unit.property.name}", 0, 1)
     pdf.set_font("helvetica", size=11)
     pdf.cell(0, 8, f"Location: {payment.tenant.unit.property.location}", 0, 1)
     pdf.ln(5)
 
-    # Horizontal Line
     pdf.set_draw_color(200, 200, 200)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # Transaction Details
     pdf.cell(0, 8, f"Receipt No: {payment.mpesa_receipt or 'N/A'}", 0, 1)
     pdf.cell(0, 8, f"Date: {payment.date_created.strftime('%d %b %Y, %H:%M')}", 0, 1)
     pdf.cell(0, 8, f"Tenant: {payment.tenant.name}", 0, 1)
     pdf.cell(0, 8, f"Unit: {payment.tenant.unit.house_number}", 0, 1)
     pdf.ln(10)
 
-    # Highlighted Amount Paid
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("helvetica", 'B', 16)
     pdf.cell(0, 20, f"TOTAL PAID: KES {payment.amount}", 1, 1, 'C', fill=True)
     pdf.ln(10)
 
-    # Financial Summary
     pdf.set_font("helvetica", size=11)
     pdf.cell(0, 8, f"Current Outstanding Balance: KES {payment.tenant.balance}", 0, 1)
     
-    # Return as raw bytes
     return pdf.output()
