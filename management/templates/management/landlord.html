@@ -2,160 +2,143 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Landlord Command Center</title>
+    <title>Ke-Rental | Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        .stats-card { border-left: 5px solid #0d6efd; }
-        .stats-collected { border-left-color: #198754; }
-        .stats-outstanding { border-left-color: #dc3545; }
-        .table-container { background: white; border-radius: 8px; padding: 20px; }
-        .water-input { width: 80px !important; }
-        .action-card { border-top: 4px solid #6f42c1; }
-        .reading-badge { font-size: 0.85rem; padding: 0.4em 0.6em; }
+        :root { --sidebar-width: 260px; }
+        body { display: flex; min-height: 100vh; background-color: #f4f7f6; }
+        
+        /* Sidebar Styling */
+        .sidebar { 
+            width: var(--sidebar-width); 
+            background: #1a1d20; 
+            color: white; 
+            position: fixed; 
+            height: 100vh; 
+            padding: 25px 15px;
+        }
+        .sidebar .brand { font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 40px; padding-left: 10px; }
+        .sidebar a { 
+            color: #94999f; 
+            text-decoration: none; 
+            display: block; 
+            padding: 12px 15px; 
+            border-radius: 8px; 
+            margin-bottom: 8px;
+            transition: 0.3s;
+        }
+        .sidebar a:hover, .sidebar a.active { background: #2d3238; color: white; }
+        
+        /* Main Content */
+        .main-content { flex: 1; margin-left: var(--sidebar-width); padding: 40px; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .stat-card { color: white; }
+        .bg-gradient-primary { background: linear-gradient(45deg, #4e73df, #224abe); }
+        .bg-gradient-success { background: linear-gradient(45deg, #1cc88a, #13855c); }
+        .bg-gradient-danger { background: linear-gradient(45deg, #e74a3b, #be2617); }
     </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container">
-            <span class="navbar-brand mb-0 h1">Ke-Rental Admin</span>
-            <div class="d-flex align-items-center">
-                <a href="/admin/" class="btn btn-outline-light btn-sm me-2">Django Admin</a>
-                <span class="text-light small">Logged in as: {{ request.user.username }}</span>
-            </div>
+<body>
+    <div class="sidebar">
+        <div class="brand">KE-RENTAL</div>
+        <a href="{% url 'landlord-dashboard' %}" class="active">📊 Dashboard</a>
+        <a href="{% url 'tenants-list' %}">👥 Tenants & Units</a>
+        <a href="{% url 'property-settings' %}">⚙️ Property Settings</a>
+        <hr class="text-secondary">
+        <a href="/admin/" class="small">Django Admin</a>
+        <div class="mt-auto pt-5">
+            <small class="text-muted d-block ps-3">Logged in as:</small>
+            <span class="ps-3 small">{{ request.user.username }}</span>
         </div>
-    </nav>
+    </div>
 
-    <div class="container">
-        <div class="row mb-4">
+    <div class="main-content">
+        <div class="d-flex justify-content-between align-items-center mb-5">
+            <h3 class="fw-bold mb-0">Executive Summary</h3>
+            <button id="invoiceBtn" onclick="generateInvoices()" class="btn btn-dark px-4 py-2 shadow-sm">
+                Run Monthly Billing
+            </button>
+        </div>
+
+        <div class="row g-4 mb-5">
             <div class="col-md-4">
-                <div class="card shadow-sm stats-card h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted text-uppercase small">Total Billed (Charges)</h6>
-                        <h2 class="fw-bold">KES {{ total_billed|floatformat:2 }}</h2>
+                <div class="card stat-card bg-gradient-primary h-100">
+                    <div class="card-body p-4">
+                        <h6 class="text-uppercase small opacity-75">Total Billed</h6>
+                        <h2 class="fw-bold mb-0">KES {{ total_billed|floatformat:2 }}</h2>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm stats-card stats-collected h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted text-uppercase small">Total Collected (Paid)</h6>
-                        <h2 class="text-success fw-bold">KES {{ total_collected|floatformat:2 }}</h2>
+                <div class="card stat-card bg-gradient-success h-100">
+                    <div class="card-body p-4">
+                        <h6 class="text-uppercase small opacity-75">Total Collected</h6>
+                        <h2 class="fw-bold mb-0">KES {{ total_collected|floatformat:2 }}</h2>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm stats-card stats-outstanding h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted text-uppercase small">Total Outstanding (Arrears)</h6>
-                        <h2 class="text-danger fw-bold">KES {{ total_outstanding|floatformat:2 }}</h2>
+                <div class="card stat-card bg-gradient-danger h-100">
+                    <div class="card-body p-4">
+                        <h6 class="text-uppercase small opacity-75">Outstanding Arrears</h6>
+                        <h2 class="fw-bold mb-0">KES {{ total_outstanding|floatformat:2 }}</h2>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="row">
-            <div class="col-md-9">
-                <div class="table-container shadow-sm border mb-4">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h5 class="mb-0 fw-bold">Tenant & Utility Overview</h5>
-                        <form method="GET" class="d-flex">
-                            <input type="text" name="search" class="form-control form-control-sm me-2" placeholder="Search name..." value="{{ search_query }}">
-                            <button class="btn btn-primary btn-sm px-3">Search</button>
-                        </form>
-                    </div>
-                    
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Tenant / Unit</th>
-                                    <th>Water (Prev → New)</th>
-                                    <th>Utilities Enabled</th>
-                                    <th>Current Balance</th>
-                                    <th class="text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for tenant in tenants %}
-                                <tr>
-                                    <td>
-                                        <div class="fw-bold">{{ tenant.name }}</div>
-                                        <span class="badge bg-dark small">Unit: {{ tenant.unit.house_number }}</span>
-                                    </td>
-                                    <td>
-                                        {% if tenant.unit.has_water %}
-                                        <div class="d-flex align-items-center mb-1">
-                                            <span class="badge bg-light text-dark border reading-badge" title="Last Month's Final Reading">
-                                                {{ tenant.unit.previous_water_reading }}
+            <div class="col-md-8">
+                <div class="card h-100">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-4">Recent Financial Activity</h5>
+                        <div class="table-responsive">
+                            <table class="table table-borderless align-middle">
+                                <thead class="text-muted small text-uppercase">
+                                    <tr>
+                                        <th>Tenant</th>
+                                        <th>Date</th>
+                                        <th>Type</th>
+                                        <th class="text-end">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in recent_payments %}
+                                    <tr class="border-bottom">
+                                        <td class="py-3 fw-bold">{{ p.tenant.name }}</td>
+                                        <td class="text-muted">{{ p.date_created|date:"d M, Y" }}</td>
+                                        <td>
+                                            <span class="badge {% if p.transaction_type == 'CHARGE' %}bg-light text-dark{% else %}bg-success-subtle text-success{% endif %}">
+                                                {{ p.get_transaction_type_display }}
                                             </span>
-                                            <span class="mx-2 text-muted">→</span>
-                                            <div class="input-group input-group-sm" style="width: 140px;">
-                                                <input type="number" 
-                                                       id="water-{{ tenant.unit.id }}" 
-                                                       class="form-control water-input" 
-                                                       value="{{ tenant.unit.last_water_reading }}" 
-                                                       step="0.1">
-                                                <button class="btn btn-primary" onclick="saveWater('{{ tenant.unit.id }}')">Save</button>
-                                            </div>
-                                        </div>
-                                        <small class="text-muted d-block" style="font-size: 0.7rem;">Enter current meter reading</small>
-                                        {% else %}
-                                        <span class="text-muted small">Not Metered</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="d-flex gap-1">
-                                            {% if tenant.unit.has_water %}<span class="badge bg-primary">Water</span>{% endif %}
-                                            {% if tenant.unit.has_garbage %}<span class="badge bg-secondary">Garbage</span>{% endif %}
-                                            {% if tenant.unit.has_service_charge %}<span class="badge bg-info text-dark">Service</span>{% endif %}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span class="{% if tenant.balance > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
-                                            KES {{ tenant.balance|floatformat:2 }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <a href="{% url 'tenant-dashboard-detail' tenant.id %}" class="btn btn-sm btn-outline-secondary">View Portal</a>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                        </td>
+                                        <td class="text-end fw-bold {% if p.transaction_type == 'MPESA' %}text-success{% endif %}">
+                                            KES {{ p.amount|floatformat:0 }}
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="4" class="text-center text-muted py-5">No recent transactions.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-md-3">
-                <div class="table-container shadow-sm border mb-4 action-card">
-                    <h6 class="fw-bold mb-3">Billing Actions</h6>
-                    <button id="invoiceBtn" onclick="generateInvoices()" class="btn btn-purple btn-sm w-100 text-white" style="background-color: #6f42c1;">
-                        Run Monthly Billing
-                    </button>
-                    <p class="text-muted x-small mt-2 mb-0" style="font-size: 0.7rem;">
-                        This will calculate consumption (New - Prev) and generate charges for all units.
-                    </p>
-                </div>
-
-                <div class="table-container shadow-sm border">
-                    <h6 class="mb-3 fw-bold">Global Activity</h6>
-                    <div class="list-group list-group-flush">
-                        {% for p in recent_payments %}
-                        <div class="list-group-item px-0 border-bottom-0 pb-3">
-                            <div class="d-flex w-100 justify-content-between mb-1">
-                                <small class="fw-bold">{{ p.tenant.name }}</small>
-                                <small class="text-muted" style="font-size: 0.75rem;">{{ p.date_created|date:"d M" }}</small>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <small class="text-secondary small">{{ p.get_transaction_type_display }}</small>
-                                <small class="{% if p.status == 'PAID' %}text-success{% else %}text-warning{% endif %} fw-bold">
-                                    KES {{ p.amount|floatformat:0 }}
-                                </small>
-                            </div>
-                        </div>
-                        {% empty %}
-                        <p class="text-muted small">No recent activity.</p>
-                        {% endfor %}
+            <div class="col-md-4">
+                <div class="card border-0 bg-dark text-white p-4 h-100">
+                    <h5 class="fw-bold mb-4">System Status</h5>
+                    <div class="mb-4">
+                        <small class="text-muted d-block mb-1">Africa's Talking SMS</small>
+                        <span class="badge bg-success">Active</span>
+                    </div>
+                    <div class="mb-4">
+                        <small class="text-muted d-block mb-1">M-Pesa Integration</small>
+                        <span class="badge bg-success">Connected</span>
+                    </div>
+                    <div class="mt-auto">
+                        <p class="small text-muted mb-0">Ke-Rental Management Suite v2.0</p>
                     </div>
                 </div>
             </div>
@@ -164,70 +147,19 @@
 
     <script>
         function generateInvoices() {
-            if (!confirm("Are you sure? This will calculate water consumption (New - Prev) and update all tenant balances.")) return;
-            
+            if (!confirm("Run monthly billing for all occupied units?")) return;
             const btn = document.getElementById('invoiceBtn');
-            btn.innerText = "Generating...";
+            btn.innerText = "Processing...";
             btn.disabled = true;
 
             fetch('{% url "generate-invoices" %}', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                }
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
             })
             .then(res => res.json())
             .then(data => {
                 alert(data.message);
                 location.reload();
-            })
-            .catch(error => {
-                alert("An error occurred during billing.");
-                btn.innerText = "Run Monthly Billing";
-                btn.disabled = false;
-            });
-        }
-
-        function saveWater(unitId) {
-            const readingInput = document.getElementById(`water-${unitId}`);
-            const readingValue = readingInput.value;
-            const originalBtn = event.target;
-            
-            originalBtn.innerText = "...";
-            originalBtn.disabled = true;
-
-            fetch('/update-water-reading/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({ 
-                    unit_id: unitId, 
-                    reading: readingValue 
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if(data.status === 'success') {
-                    originalBtn.innerText = "Saved";
-                    originalBtn.classList.replace('btn-primary', 'btn-success');
-                    setTimeout(() => {
-                        originalBtn.innerText = "Save";
-                        originalBtn.classList.replace('btn-success', 'btn-primary');
-                        originalBtn.disabled = false;
-                    }, 2000);
-                } else {
-                    alert("Error: " + data.message);
-                    originalBtn.innerText = "Save";
-                    originalBtn.disabled = false;
-                }
-            })
-            .catch(error => {
-                alert("Failed to connect to server.");
-                originalBtn.innerText = "Save";
-                originalBtn.disabled = false;
             });
         }
     </script>

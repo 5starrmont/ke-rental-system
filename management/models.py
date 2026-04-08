@@ -7,8 +7,12 @@ class Property(models.Model):
     location = models.CharField(max_length=200)
     landlord = models.ForeignKey(User, on_delete=models.CASCADE, related_name="managed_properties", null=True)
     
-    # --- GLOBAL UTILITY RATES ---
+    # --- GLOBAL UTILITY SETTINGS & RATES ---
     water_rate_per_unit = models.DecimalField(max_digits=10, decimal_places=2, default=150.00)
+    garbage_fee_default = models.DecimalField(max_digits=10, decimal_places=2, default=500.00)
+    
+    water_billing_enabled = models.BooleanField(default=True)
+    garbage_billing_enabled = models.BooleanField(default=True)
 
     class Meta:
         verbose_name_plural = "Properties"

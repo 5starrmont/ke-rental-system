@@ -1,8 +1,10 @@
 import africastalking
 import logging
+import pytz
 from fpdf import FPDF
 from io import BytesIO
 from datetime import timedelta
+from django.utils import timezone
 
 # --- SMS Configuration ---
 username = "sandbox" 
@@ -65,6 +67,11 @@ def generate_receipt_pdf(payment):
     pdf = ReceiptPDF()
     pdf.add_page()
     
+    # --- TIMEZONE CORRECTION ---
+    # Convert UTC database time to Nairobi Local Time
+    nairobi_tz = pytz.timezone('Africa/Nairobi')
+    local_time = payment.date_created.astimezone(nairobi_tz)
+    
     is_payment = payment.transaction_type == 'MPESA'
     
     # 1. HEADER BRANDING
@@ -87,8 +94,8 @@ def generate_receipt_pdf(payment):
     
     # Billing Period for Invoices
     if not is_payment:
-        start_date = (payment.date_created - timedelta(days=30)).strftime('%d %b %Y')
-        end_date = payment.date_created.strftime('%d %b %Y')
+        start_date = (local_time - timedelta(days=30)).strftime('%d %b %Y')
+        end_date = local_time.strftime('%d %b %Y')
         pdf.set_font("helvetica", 'I', 10)
         pdf.cell(0, 8, f"Billing Period: {start_date} to {end_date}", 0, 1)
     
@@ -106,7 +113,8 @@ def generate_receipt_pdf(payment):
     pdf.set_font("helvetica", 'B', 11)
     pdf.cell(40, 8, "Date:")
     pdf.set_font("helvetica", size=11)
-    pdf.cell(0, 8, f"{payment.date_created.strftime('%d %b %Y, %H:%M')}", 0, 1)
+    # Using the local_time variable instead of raw date_created
+    pdf.cell(0, 8, f"{local_time.strftime('%d %b %Y, %H:%M')}", 0, 1)
 
     pdf.set_font("helvetica", 'B', 11)
     pdf.cell(40, 8, "Tenant:")

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ke-Rental | System Settings</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        :root { --sidebar-width: 260px; }
+        body { display: flex; min-height: 100vh; background-color: #f4f7f6; transition: 0.3s; }
+        
+        /* Sidebar Styling */
+        .sidebar { 
+            width: var(--sidebar-width); 
+            background: #1a1d20; 
+            color: white; 
+            position: fixed; 
+            height: 100vh; 
+            padding: 25px 15px; 
+            transition: 0.3s;
+            z-index: 1000;
+        }
+        .sidebar.collapsed { margin-left: calc(var(--sidebar-width) * -1); }
+        .sidebar .brand { font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 40px; padding-left: 10px; }
+        .sidebar a { 
+            color: #94999f; 
+            text-decoration: none; 
+            display: block; 
+            padding: 12px 15px; 
+            border-radius: 8px; 
+            margin-bottom: 8px; 
+            transition: 0.3s; 
+        }
+        .sidebar a:hover, .sidebar a.active { background: #2d3238; color: white; }
+        
+        /* Main Content Adjustment */
+        .main-content { 
+            flex: 1; 
+            margin-left: var(--sidebar-width); 
+            padding: 40px; 
+            transition: 0.3s; 
+        }
+        .main-content.expanded { margin-left: 0; }
+        
+        .card { border: none; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .settings-header { border-bottom: 1px solid #eee; padding-bottom: 20px; margin-bottom: 30px; }
+        
+        .toggle-btn { 
+            cursor: pointer; 
+            padding: 10px; 
+            background: #fff; 
+            border-radius: 5px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            margin-bottom: 20px; 
+            display: inline-block; 
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar" id="sidebar">
+        <div class="brand">KE-RENTAL</div>
+        <a href="{% url 'landlord-dashboard' %}">📊 Dashboard</a>
+        <a href="{% url 'tenants-list' %}">👥 Tenants & Units</a>
+        <a href="{% url 'property-settings' %}" class="active">⚙️ System Settings</a>
+        <hr class="text-secondary">
+        <a href="/admin/" class="small">Django Admin</a>
+    </div>
+
+    <div class="main-content" id="main-content">
+        <div class="toggle-btn" onclick="toggleSidebar()">☰</div>
+
+        <div class="settings-header">
+            <h3 class="fw-bold mb-1">Global Property Settings</h3>
+            <p class="text-muted">Manage building identity, universal utility rates, and active features.</p>
+        </div>
+
+        {% if success %}
+        <div class="alert alert-success alert-dismissible fade show mb-4 border-0 shadow-sm" role="alert">
+            <strong>Success!</strong> System configuration has been updated.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
+        <form method="POST">
+            {% csrf_token %}
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card p-4 mb-4">
+                        <h5 class="fw-bold mb-4">Building Identity</h5>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small text-uppercase fw-bold">Property Name</label>
+                            <input type="text" name="name" class="form-control form-control-lg" value="{{ property.name }}" placeholder="e.g. Nairobi Heights">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label text-muted small text-uppercase fw-bold">Location</label>
+                            <input type="text" name="location" class="form-control" value="{{ property.location }}" placeholder="e.g. Westlands, Nairobi">
+                        </div>
+                    </div>
+
+                    <div class="card p-4">
+                        <h5 class="fw-bold mb-4">Utility Control & Billing</h5>
+                        <div class="row mb-4">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-muted small text-uppercase fw-bold">Water Rate (per unit)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">KES</span>
+                                    <input type="number" step="0.01" name="water_rate" class="form-control" value="{{ property.water_rate_per_unit }}">
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-muted small text-uppercase fw-bold">Default Garbage Fee</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">KES</span>
+                                    <input type="number" step="0.01" name="garbage_fee" class="form-control" value="{{ property.garbage_fee_default }}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        
+                        <h6 class="fw-bold mb-3">Feature Toggles</h6>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="water_enabled" id="toggleWater" {% if property.water_billing_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="toggleWater">Enable Global Water Billing Logic</label>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="garbage_enabled" id="toggleGarbage" {% if property.garbage_billing_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="toggleGarbage">Enable Global Garbage Fee Logic</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="card p-4 bg-dark text-white mb-4">
+                        <h6 class="fw-bold mb-3">Update System</h6>
+                        <p class="small opacity-75 mb-4">Changes made here will be reflected across all units in the next billing cycle.</p>
+                        <button type="submit" class="btn btn-light w-100 fw-bold py-2">Save Configuration</button>
+                    </div>
+
+                    <div class="card bg-light border-0 p-4">
+                        <h6 class="fw-bold mb-3">Management Note</h6>
+                        <p class="small text-muted mb-0">
+                            Updating values here will update the <strong>Property</strong> model. Use the Tenants page for unit-specific overrides.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+            document.getElementById('main-content').classList.toggle('expanded');
+        }
+    </script>
+</body>
+</html>

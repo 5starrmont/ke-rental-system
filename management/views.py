@@ -4,7 +4,7 @@ import decimal
 from datetime import timedelta
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.db.models import Sum
 from django.contrib.auth.decorators import login_required
 from django.conf import settings 
@@ -19,6 +19,12 @@ from django_daraja.mpesa.core import MpesaClient
 from .models import Tenant, Payment, Unit, Property, MaintenanceRequest
 from .serializers import TenantSerializer, PaymentSerializer
 from .utils import generate_receipt_pdf  # Import our updated PDF utility
+
+# --- Helper Logic for User Roles ---
+
+def is_caretaker(user):
+    """Checks if a user belongs to the 'Caretakers' group or is staff."""
+    return user.groups.filter(name='Caretakers').exists() or user.is_staff
 
 # --- Helper Function for SMS ---
 
@@ -75,6 +81,7 @@ def initiate_mpesa_payment(request):
 
     try:
         tenant = Tenant.objects.get(id=tenant_id)
+        # Keeping your exact callback URL
         callback_url = settings.MPESA_CONFIG.get('CALLBACK_URL', 'https://oversevere-micki-excursionary.ngrok-free.dev/api/mpesa-callback/')
         
         cl = MpesaClient()
@@ -152,14 +159,115 @@ def mpesa_callback(request):
     
     return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
+# --- Landlord Portal (Dedicated Pages) ---
+
+@login_required
+def landlord_dashboard(request):
+    """Global financial overview for the property manager."""
+    if not request.user.is_staff:
+        return HttpResponse("Unauthorized", status=403)
+
+    # Calculate Totals based on transaction types
+    total_billed = Payment.objects.filter(transaction_type='CHARGE').aggregate(Sum('amount'))['amount__sum'] or 0
+    total_collected = Payment.objects.filter(transaction_type='MPESA', status='PAID').aggregate(Sum('amount'))['amount__sum'] or 0
+    total_outstanding = Tenant.objects.aggregate(Sum('balance'))['balance__sum'] or 0
+    
+    recent_payments = Payment.objects.all().order_by('-date_created')[:10]
+    
+    return render(request, 'management/landlord.html', {
+        'total_billed': total_billed,
+        'total_collected': total_collected,
+        'total_outstanding': total_outstanding,
+        'recent_payments': recent_payments,
+    })
+
+@login_required
+def tenants_list(request):
+    """Dedicated management page for Units and Tenants."""
+    if not request.user.is_staff:
+        return HttpResponse("Unauthorized", status=403)
+        
+    search_query = request.GET.get('search', '')
+    tenants = Tenant.objects.all()
+    if search_query:
+        tenants = tenants.filter(name__icontains=search_query)
+
+    return render(request, 'management/tenants.html', {
+        'tenants': tenants,
+        'search_query': search_query
+    })
+
+@login_required
+def property_settings(request):
+    """Dedicated page for Global Property configuration."""
+    if not request.user.is_staff:
+        return HttpResponse("Unauthorized", status=403)
+    
+    property_obj = Property.objects.first()
+    
+    if request.method == 'POST':
+        # Update Identity
+        property_obj.name = request.POST.get('name')
+        property_obj.location = request.POST.get('location')
+        
+        # Update Rates
+        property_obj.water_rate_per_unit = request.POST.get('water_rate')
+        property_obj.garbage_fee_default = request.POST.get('garbage_fee')
+        
+        # Update Toggles (Checkboxes only appear in POST if they are checked)
+        property_obj.water_billing_enabled = 'water_enabled' in request.POST
+        property_obj.garbage_billing_enabled = 'garbage_enabled' in request.POST
+        
+        property_obj.save()
+        return render(request, 'management/settings.html', {'property': property_obj, 'success': True})
+
+    return render(request, 'management/settings.html', {'property': property_obj})
+
+# --- Caretaker Portal ---
+
+@login_required
+def caretaker_dashboard(request):
+    """
+    Portal restricted to users in the 'Caretakers' group or Staff.
+    """
+    if not is_caretaker(request.user):
+        return HttpResponse("Unauthorized: This portal is for Caretakers only.", status=403)
+
+    units = Unit.objects.filter(is_occupied=True).order_by('house_number')
+    pending_maintenance = MaintenanceRequest.objects.exclude(status='RESOLVED').order_by('-is_emergency', '-date_reported')
+
+    return render(request, 'management/caretaker.html', {
+        'units': units,
+        'maintenance': pending_maintenance
+    })
+
+@login_required
+@api_view(['POST'])
+def update_maintenance_status(request):
+    """AJAX view to update request status (e.g., Pending -> In Progress)."""
+    request_id = request.data.get('request_id')
+    new_status = request.data.get('status')
+    
+    try:
+        maintenance = MaintenanceRequest.objects.get(id=request_id)
+        maintenance.status = new_status
+        maintenance.save()
+        return JsonResponse({'status': 'success'})
+    except MaintenanceRequest.DoesNotExist:
+        return JsonResponse({'status': 'error'}, status=404)
+
 # --- Dashboard Views ---
 
 @login_required
 def tenant_dashboard(request, tenant_id=None):
     """
     Shows the dashboard. 
-    Uses 'is_landlord_view' flag to toggle management vs user UI.
+    Redirects caretakers to their specific portal if no tenant_id is provided.
     """
+    # Auto-redirect Caretaker users to their field dashboard
+    if is_caretaker(request.user) and not tenant_id:
+        return redirect('caretaker-dashboard')
+
     try:
         is_landlord_view = False
         if tenant_id:
@@ -183,31 +291,6 @@ def tenant_dashboard(request, tenant_id=None):
         return render(request, 'management/dashboard.html', {
             'error': "No tenant profile found or linked to this account."
         })
-
-@login_required
-def landlord_dashboard(request):
-    """Global financial overview for the property manager."""
-    search_query = request.GET.get('search', '')
-    tenants = Tenant.objects.all()
-    
-    if search_query:
-        tenants = tenants.filter(name__icontains=search_query)
-
-    # Calculate Totals based on transaction types
-    total_billed = Payment.objects.filter(transaction_type='CHARGE').aggregate(Sum('amount'))['amount__sum'] or 0
-    total_collected = Payment.objects.filter(transaction_type='MPESA', status='PAID').aggregate(Sum('amount'))['amount__sum'] or 0
-    total_outstanding = Tenant.objects.aggregate(Sum('balance'))['balance__sum'] or 0
-    
-    recent_payments = Payment.objects.all().order_by('-date_created')[:10]
-    
-    return render(request, 'management/landlord.html', {
-        'total_billed': total_billed,
-        'total_collected': total_collected,
-        'total_outstanding': total_outstanding,
-        'tenants': tenants,
-        'recent_payments': recent_payments,
-        'search_query': search_query
-    })
 
 # --- AJAX Action Views ---
 
@@ -251,31 +334,63 @@ def report_maintenance(request):
 
 @login_required
 @api_view(['POST'])
-def generate_monthly_invoices(request):
-    """Loop through all tenants and generate charges based on actual water consumption."""
+def update_unit_settings(request):
+    """Updates utility toggles and fixed fees for a unit via AJAX."""
     if not request.user.is_staff:
         return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
+
+    unit_id = request.data.get('unit_id')
+    try:
+        unit = Unit.objects.get(id=unit_id)
+        
+        # Update toggles
+        unit.has_water = request.data.get('has_water', unit.has_water)
+        unit.has_garbage = request.data.get('has_garbage', unit.has_garbage)
+        unit.has_service_charge = request.data.get('has_service_charge', unit.has_service_charge)
+        
+        # Update fees
+        unit.monthly_rent = request.data.get('monthly_rent', unit.monthly_rent)
+        unit.garbage_fee = request.data.get('garbage_fee', unit.garbage_fee)
+        unit.service_charge_fee = request.data.get('service_charge_fee', unit.service_charge_fee)
+        
+        unit.save()
+        return JsonResponse({'status': 'success', 'message': f'Settings updated for {unit.house_number}'})
+    except Unit.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Unit not found'}, status=404)
+
+@login_required
+@api_view(['POST'])
+def generate_monthly_invoices(request):
+    """Loop through all tenants and generate charges based on Global Property Settings."""
+    if not request.user.is_staff:
+        return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
+
+    # 1. Fetch Global Property Settings
+    prop = Property.objects.first()
+    if not prop:
+        return JsonResponse({'status': 'error', 'message': 'No Property settings found.'}, status=404)
 
     tenants = Tenant.objects.filter(unit__is_occupied=True)
     count = 0
 
     for tenant in tenants:
         unit = tenant.unit
-        prop = unit.property
         total_amount = unit.monthly_rent
         breakdown = [f"Rent: {unit.monthly_rent}"]
 
-        # 1. Garbage Fee
-        if unit.has_garbage:
-            total_amount += unit.garbage_fee
-            breakdown.append(f"Garbage: {unit.garbage_fee}")
+        # 2. Global Garbage Logic (Pulling from Property Settings)
+        if prop.garbage_billing_enabled and unit.has_garbage:
+            total_amount += prop.garbage_fee_default
+            breakdown.append(f"Garbage: {prop.garbage_fee_default}")
 
-        # 2. Dynamic Water Calculation
-        if unit.has_water:
-            # Consumed = New Reading - Previous Reading
+        # 3. Add Service Charge if toggled on the Unit
+        if unit.has_service_charge:
+            total_amount += unit.service_charge_fee
+            breakdown.append(f"Service: {unit.service_charge_fee}")
+
+        # 4. Global Water Logic (New - Previous * Global Rate)
+        if prop.water_billing_enabled and unit.has_water:
             consumed = unit.last_water_reading - unit.previous_water_reading
-            
-            # Prevent negative billing if reading was reset or entered wrong
             if consumed < 0:
                 consumed = 0
             
@@ -283,11 +398,11 @@ def generate_monthly_invoices(request):
             total_amount += water_total
             breakdown.append(f"Water ({consumed} units): {water_total}")
             
-            # Reset reading: Current reading becomes the 'previous' for next month
+            # Shift readings for next cycle
             unit.previous_water_reading = unit.last_water_reading
             unit.save()
 
-        # 3. Create the Charge record
+        # 5. Create the Charge record
         Payment.objects.create(
             tenant=tenant,
             amount=total_amount,
@@ -296,7 +411,7 @@ def generate_monthly_invoices(request):
             note=", ".join(breakdown)
         )
 
-        # Update Tenant Balance
+        # 6. Update Tenant Balance
         tenant.balance += total_amount
         tenant.save()
         count += 1
@@ -307,13 +422,12 @@ def generate_monthly_invoices(request):
 
 @login_required
 def view_invoice(request, payment_id):
-    """Renders a web-based itemized view of an invoice with specific dates."""
+    """Renders a web-based itemized view of an invoice."""
     payment = get_object_or_404(Payment, id=payment_id)
     
     if not request.user.is_staff and payment.tenant.user != request.user:
         return HttpResponse("Unauthorized", status=403)
     
-    # Calculate Billing Period (30 days prior to invoice date)
     start_date = payment.date_created - timedelta(days=30)
     end_date = payment.date_created
 
@@ -335,22 +449,18 @@ def view_invoice(request, payment_id):
 
 @login_required
 def download_receipt(request, payment_id):
-    """Generates and returns a PDF receipt (MPESA) or Invoice (CHARGE)."""
+    """Generates and returns a PDF receipt."""
     payment = get_object_or_404(Payment, id=payment_id)
     
-    # Permission check: User must be staff or own the tenant profile
     if not request.user.is_staff and payment.tenant.user != request.user:
          return HttpResponse("Unauthorized", status=403)
     
-    # Fetch content from our itemized generator
     pdf_content = generate_receipt_pdf(payment)
     response = HttpResponse(bytes(pdf_content), content_type='application/pdf')
     
-    # Determine filename prefix
     prefix = "Receipt" if payment.transaction_type == 'MPESA' else "Invoice"
     filename = f"{prefix}_{payment.mpesa_receipt or payment.id}.pdf"
     
-    # 'inline' opens it in the browser tab instead of downloading directly
     response['Content-Disposition'] = f'inline; filename="{filename}"'
     
     return response
